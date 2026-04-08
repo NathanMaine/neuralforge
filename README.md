@@ -285,7 +285,7 @@ NVIDIA Inception Member. Building tools that put GPU-accelerated AI in the hands
 
 - GitHub: [NathanMaine](https://github.com/NathanMaine)
 - HuggingFace: [Nathan-Maine](https://huggingface.co/Nathan-Maine)
-- LinkedIn: [Nathan Maine](https://www.linkedin.com/in/nathan-maine/)
+- LinkedIn: [Nathan Maine](https://www.linkedin.com/in/nathanmaine/)
 
 ---
 
