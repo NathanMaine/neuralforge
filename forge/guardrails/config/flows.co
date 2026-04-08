@@ -1,0 +1,69 @@
+# NeuralForge Colang flow definitions
+# Input, output, and retrieval rails for the knowledge platform.
+
+# ─── Input Rails ──────────────────────────────────────────────
+
+define flow check pii
+  """Scrub PII from user input before processing."""
+  execute scrub_pii_input(text=$user_message)
+  if $pii_found
+    execute log_rail_decision(rail_name="input_pii", decision=False, reason="PII detected and scrubbed")
+    bot inform pii scrubbed
+
+define flow check jailbreak
+  """Detect prompt injection and jailbreak attempts."""
+  $is_jailbreak = execute check_jailbreak_attempt(text=$user_message)
+  if $is_jailbreak
+    execute log_rail_decision(rail_name="input_jailbreak", decision=False, reason="Jailbreak attempt detected")
+    bot refuse jailbreak
+
+define flow check topic relevance
+  """Ensure query is related to the knowledge domain."""
+  $is_relevant = execute check_topic_relevance(text=$user_message)
+  if not $is_relevant
+    execute log_rail_decision(rail_name="input_topic", decision=False, reason="Off-topic query")
+    bot inform off topic
+
+# ─── Output Rails ─────────────────────────────────────────────
+
+define flow check hallucination
+  """Verify expert citations against the knowledge graph."""
+  $hallucination_ok = execute check_hallucination(context=$context, response=$bot_message)
+  if not $hallucination_ok
+    execute log_rail_decision(rail_name="output_hallucination", decision=False, reason="Hallucinated expert citation")
+    $corrected = execute self_correction(context=$context, response=$bot_message, hallucination_detected=True)
+    bot $corrected
+
+define flow check attribution
+  """Ensure all expert names are real graph nodes."""
+  $attribution_ok = execute check_attribution(context=$context, response=$bot_message)
+  if not $attribution_ok
+    execute log_rail_decision(rail_name="output_attribution", decision=False, reason="Unattributable reference")
+    bot inform attribution failure
+
+define flow add provenance
+  """Append source provenance metadata to the response."""
+  $enriched = execute add_provenance(context=$context, response=$bot_message, chunks_used=$chunks_used)
+  bot $enriched
+
+# ─── Retrieval Rails ──────────────────────────────────────────
+
+define flow check retrieval relevance
+  """Ensure retrieved chunks are relevant to the query."""
+  $is_relevant = execute check_retrieval_relevance(query=$user_message, chunks=$retrieved_chunks)
+  if not $is_relevant
+    execute log_rail_decision(rail_name="retrieval_relevance", decision=False, reason="Irrelevant chunks filtered")
+
+# ─── Bot Responses ────────────────────────────────────────────
+
+define bot refuse jailbreak
+  "I'm unable to process that request. Please rephrase your question about the knowledge domain."
+
+define bot inform off topic
+  "That question appears to be outside the knowledge domain I cover. Could you ask something related to the experts and topics in the knowledge base?"
+
+define bot inform pii scrubbed
+  "I noticed some personal information in your query and have removed it for your privacy."
+
+define bot inform attribution failure
+  "I was unable to verify all expert references in my response. Please treat unverified claims with caution."

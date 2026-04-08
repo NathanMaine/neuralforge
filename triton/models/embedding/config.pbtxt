@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────
+# Triton Model Config: Embedding (nomic-embed-text v1.5)
+#
+# Export ONNX model and place at:
+#   triton/models/embedding/1/model.onnx
+#
+# Input:  tokenized text (input_ids, attention_mask)
+# Output: 768-dim normalized embedding vector
+# ─────────────────────────────────────────────────────────────
+
+name: "embedding"
+platform: "onnxruntime_onnx"
+max_batch_size: 64
+
+input [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [-1]
+  },
+  {
+    name: "attention_mask"
+    data_type: TYPE_INT64
+    dims: [-1]
+  }
+]
+
+output [
+  {
+    name: "sentence_embedding"
+    data_type: TYPE_FP32
+    dims: [768]
+  }
+]
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [8, 16, 32]
+  max_queue_delay_microseconds: 100
+}
+
+# Optimization: TensorRT acceleration for supported ops
+optimization {
+  execution_accelerators {
+    gpu_execution_accelerator: [
+      {
+        name: "tensorrt"
+        parameters {
+          key: "precision_mode"
+          value: "FP16"
+        }
+        parameters {
+          key: "max_workspace_size_bytes"
+          value: "1073741824"
+        }
+      }
+    ]
+  }
+}

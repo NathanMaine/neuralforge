@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuralForge</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1 class="logo">NeuralForge</h1>
+            <span class="tagline">Expert Knowledge Graph</span>
+            <div class="status-indicator" id="status-dot"></div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Search -->
+        <section class="search-section">
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Search the knowledge graph..." />
+                <button id="search-btn">Search</button>
+            </div>
+            <div id="search-results" class="results-container"></div>
+        </section>
+
+        <!-- Dashboard Stats -->
+        <section class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-nodes">--</div>
+                <div class="stat-label">Graph Nodes</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-edges">--</div>
+                <div class="stat-label">Graph Edges</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-chunks">--</div>
+                <div class="stat-label">Knowledge Chunks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-experts">--</div>
+                <div class="stat-label">Experts</div>
+            </div>
+        </section>
+
+        <!-- Experts List -->
+        <section class="experts-section">
+            <h2>Experts</h2>
+            <div id="experts-list" class="experts-grid"></div>
+        </section>
+
+        <!-- Expert Detail (hidden by default) -->
+        <section class="expert-detail" id="expert-detail" style="display:none;">
+            <button class="back-btn" id="back-btn">Back to Experts</button>
+            <div id="expert-info"></div>
+        </section>
+
+        <!-- Node Types -->
+        <section class="types-section">
+            <h2>Node Types</h2>
+            <div id="node-types" class="types-grid"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>NeuralForge v1.0.0 &mdash; GPU-accelerated expert knowledge graph with layered RAG</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# NeuralForge NeMo Guardrails Configuration
+# Uses NIM backend for LLM calls within the rails engine.
+
+models:
+  - type: main
+    engine: nim
+    model: meta/llama-3.1-8b-instruct
+
+rails:
+  input:
+    flows:
+      - check pii
+      - check jailbreak
+      - check topic relevance
+
+  output:
+    flows:
+      - check hallucination
+      - check attribution
+      - add provenance
+
+  retrieval:
+    flows:
+      - check retrieval relevance
+
+# Custom action registration
+actions:
+  - name: check_hallucination
+    module: forge.guardrails.actions
+  - name: check_attribution
+    module: forge.guardrails.actions
+  - name: add_provenance
+    module: forge.guardrails.actions
+  - name: scrub_pii_input
+    module: forge.guardrails.actions
+  - name: self_correction
+    module: forge.guardrails.actions
+  - name: log_rail_decision
+    module: forge.guardrails.actions

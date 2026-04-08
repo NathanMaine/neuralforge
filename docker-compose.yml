@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────
+# NeuralForge — Full GPU Stack
+# 4 services: NeuralForge API + NIM LLM + Triton + Qdrant
+#
+# Deploy:  docker compose up -d
+# Monitor: docker compose logs -f neuralforge
+# ─────────────────────────────────────────────────────────────
+
+services:
+  # ── NeuralForge API ──────────────────────────────────────
+  neuralforge:
+    build: .
+    container_name: neuralforge-api
+    ports:
+      - "8090:8090"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: "1g"
+    volumes:
+      - forge-data:/app/data
+      - nim-cache:/opt/nim/.cache
+    environment:
+      NIM_URL: http://nim-llm:8000
+      TRITON_URL: http://triton-embed:8000
+      TRITON_GRPC_URL: triton-embed:8001
+      QDRANT_URL: http://qdrant:6333
+      GUARDRAILS_ENABLED: "true"
+    depends_on:
+      nim-llm:
+        condition: service_healthy
+      triton-embed:
+        condition: service_started
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── NIM LLM (TensorRT-LLM) ──────────────────────────────
+  nim-llm:
+    image: ${NIM_MODEL:-nvcr.io/nim/meta/llama-3.1-8b-instruct:latest}
+    container_name: neuralforge-nim
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: "16g"
+    volumes:
+      - nim-cache:/opt/nim/.cache
+    environment:
+      NGC_API_KEY: ${NGC_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  # ── Triton Inference Server (Embedding + Reranking) ──────
+  triton-embed:
+    image: nvcr.io/nvidia/tritonserver:24.12-py3
+    container_name: neuralforge-triton
+    ports:
+      - "8001:8000"   # HTTP
+      - "8002:8001"   # gRPC
+      - "8003:8002"   # Metrics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: "1g"
+    volumes:
+      - ./triton/models:/models
+    command: >
+      tritonserver
+        --model-repository=/models
+        --log-verbose=0
+        --strict-model-config=false
+    restart: unless-stopped
+
+  # ── Qdrant Vector Database ──────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: neuralforge-qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  forge-data:
+    driver: local
+  nim-cache:
+    driver: local
+  qdrant-data:
+    driver: local

@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────
+# Triton Model Config: Reranker (Cross-Encoder)
+#
+# Export ONNX model and place at:
+#   triton/models/reranker/1/model.onnx
+#
+# Input:  query-document pair (tokenized)
+# Output: relevance score (0.0 - 1.0)
+# ─────────────────────────────────────────────────────────────
+
+name: "reranker"
+platform: "onnxruntime_onnx"
+max_batch_size: 32
+
+input [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [-1]
+  },
+  {
+    name: "attention_mask"
+    data_type: TYPE_INT64
+    dims: [-1]
+  },
+  {
+    name: "token_type_ids"
+    data_type: TYPE_INT64
+    dims: [-1]
+  }
+]
+
+output [
+  {
+    name: "relevance_score"
+    data_type: TYPE_FP32
+    dims: [1]
+  }
+]
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [4, 8, 16]
+  max_queue_delay_microseconds: 200
+}
+
+optimization {
+  execution_accelerators {
+    gpu_execution_accelerator: [
+      {
+        name: "tensorrt"
+        parameters {
+          key: "precision_mode"
+          value: "FP16"
+        }
+        parameters {
+          key: "max_workspace_size_bytes"
+          value: "1073741824"
+        }
+      }
+    ]
+  }
+}
