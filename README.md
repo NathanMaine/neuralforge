@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/neuralforge-banner.jpg" alt="NeuralForge" width="100%">
+</p>
+
+<p align="center">
   <h1 align="center">NeuralForge</h1>
   <p align="center"><strong>Your experts. Your GPU. Your data never leaves.</strong></p>
   <p align="center">
