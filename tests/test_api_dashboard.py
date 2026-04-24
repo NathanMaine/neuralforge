@@ -125,6 +125,23 @@ class TestExpertsEndpoint:
             data = client.get("/api/experts").json()
         assert data["experts"] == []
 
+    def test_experts_engine_none_returns_empty(self, client):
+        """When graph engine is None, list_experts returns empty list."""
+        import forge.api.main as main_mod
+        original = main_mod.graph_engine
+        main_mod.graph_engine = None
+        try:
+            data = client.get("/api/experts").json()
+            assert data["experts"] == []
+        finally:
+            main_mod.graph_engine = original
+
+    def test_experts_qdrant_error_returns_zero_chunks(self, client):
+        """When qdrant raises, chunk_count defaults to 0."""
+        with patch("forge.core.qdrant_client.count_chunks_for_expert", side_effect=Exception("qdrant down")):
+            data = client.get("/api/experts").json()
+        assert data["experts"][0]["chunk_count"] == 0
+
 
 class TestExpertDetailEndpoint:
     def test_expert_detail_found(self, client):
@@ -151,3 +168,28 @@ class TestExpertDetailEndpoint:
         with patch("forge.core.qdrant_client.count_chunks_for_expert", return_value=0):
             data = client.get("/api/expert/alice-expert").json()
         assert "rankings" in data
+
+    def test_expert_detail_engine_none_returns_503(self, client):
+        """When graph engine is None, get_expert_detail returns 503."""
+        import forge.api.main as main_mod
+        original = main_mod.graph_engine
+        main_mod.graph_engine = None
+        try:
+            resp = client.get("/api/expert/alice-expert")
+            assert resp.status_code == 503
+        finally:
+            main_mod.graph_engine = original
+
+    def test_expert_detail_qdrant_error_returns_zero_chunks(self, client):
+        """When qdrant raises in detail view, chunk_count defaults to 0."""
+        with patch("forge.core.qdrant_client.count_chunks_for_expert", side_effect=Exception("qdrant down")):
+            data = client.get("/api/expert/alice-expert").json()
+        assert data["chunk_count"] == 0
+
+    def test_expert_detail_authority_error_returns_empty_rankings(self, client, mock_engine):
+        """When expert_authority raises, rankings defaults to empty list."""
+        mock_engine.expert_authority.side_effect = Exception("pagerank failed")
+        with patch("forge.core.qdrant_client.count_chunks_for_expert", return_value=0):
+            data = client.get("/api/expert/alice-expert").json()
+        assert data["rankings"] == []
+
