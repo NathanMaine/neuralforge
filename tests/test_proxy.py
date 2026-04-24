@@ -385,7 +385,7 @@ class TestStreamingError:
         """When streaming raises, the error should be returned as an SSE chunk."""
         async def erroring_stream(*args, **kwargs):
             raise RuntimeError("NIM connection failed")
-            yield  # make it a generator
+            yield  # noqa: unreachable -- required to make this function a generator
 
         with patch("forge.core.nim_client.stream_completion", return_value=erroring_stream()):
             resp = client.post(

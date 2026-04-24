@@ -205,18 +205,20 @@ class TestSearchBM25ImportFailure:
         results = [
             {"score": 0.9, "expert": "Alice", "title": "ML", "text": "machine learning", "source": "x", "chunk_index": 0},
         ]
-        import sys
-        original = sys.modules.get("rank_bm25")
-        sys.modules["rank_bm25"] = None  # simulate import failure
-        try:
-            with patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=_mock_context()), \
-                 patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
-                 patch("forge.core.qdrant_client.search_vectors", return_value=results):
-                resp = client.get("/api/search?q=machine+learning")
-            assert resp.status_code == 200
-        finally:
-            if original is None:
-                sys.modules.pop("rank_bm25", None)
-            else:
-                sys.modules["rank_bm25"] = original
+        # Use builtins.__import__ to force ImportError for rank_bm25 specifically,
+        # regardless of whether the package is actually installed.
+        import builtins
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "rank_bm25":
+                raise ImportError("No module named 'rank_bm25'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=_mock_context()), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=results):
+            resp = client.get("/api/search?q=machine+learning")
+        assert resp.status_code == 200
 

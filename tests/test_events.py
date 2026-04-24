@@ -222,6 +222,26 @@ class TestEventStreamGenerator:
         await gen.aclose()
 
     @pytest.mark.asyncio
+    async def test_cancelled_error_during_wait_stops_generator(self):
+        """CancelledError raised during queue.get() is swallowed gracefully."""
+        from forge.api.routes.events import _event_stream
+
+        queue = asyncio.Queue()
+        gen = _event_stream(queue)
+
+        # Prime the generator past the initial try/while/try
+        # by first injecting a TimeoutError to get a heartbeat, then throw CancelledError
+        await queue.put({"type": "init", "data": {}})
+        first = await gen.__anext__()
+        assert "event: init" in first
+
+        # Now throw CancelledError into the running generator
+        try:
+            await gen.athrow(asyncio.CancelledError)
+        except StopAsyncIteration:
+            pass  # Generator stopped cleanly after handling CancelledError
+
+    @pytest.mark.asyncio
     async def test_multiple_events_in_sequence(self):
         from forge.api.routes.events import _event_stream
         queue = asyncio.Queue()
