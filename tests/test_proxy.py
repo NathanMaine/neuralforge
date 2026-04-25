@@ -277,3 +277,125 @@ class TestErrorHandling:
                 "temperature": 0.2,
             })
         assert resp.status_code == 200
+
+    def test_malformed_result_does_not_crash(self, client):
+        """When NIM returns a response without choices, output rail is skipped."""
+        malformed = {"id": "x", "object": "chat.completion", "choices": []}
+        with patch("forge.core.nim_client.chat_completion", new_callable=AsyncMock, return_value=malformed), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=LayeredContext(query="x")), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=[]):
+            resp = client.post("/v1/chat/completions", json={
+                "messages": [{"role": "user", "content": "Hi"}],
+            })
+        assert resp.status_code == 200
+
+    def test_result_missing_choices_key(self, client):
+        """NIM response without 'choices' key should not raise."""
+        no_choices = {"id": "x", "object": "chat.completion"}
+        with patch("forge.core.nim_client.chat_completion", new_callable=AsyncMock, return_value=no_choices), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=LayeredContext(query="x")), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=[]):
+            resp = client.post("/v1/chat/completions", json={
+                "messages": [{"role": "user", "content": "Hi"}],
+            })
+        assert resp.status_code == 200
+
+
+class TestNoUserMessageBranch:
+    def test_stream_with_no_user_message_bypass(self, client):
+        """Bypass + stream + no user message hits the stream branch."""
+        async def mock_stream(*args, **kwargs):
+            yield {"choices": [{"delta": {"content": "Hi"}}]}
+
+        with patch("forge.core.nim_client.stream_completion", return_value=mock_stream()):
+            resp = client.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [{"role": "system", "content": "sys"}],
+                    "stream": True,
+                },
+                headers={"X-NeuralForge-Bypass": "true"},
+            )
+        assert resp.status_code == 200
+
+    def test_no_user_message_nim_unavailable(self, client):
+        """No user message path returns 502 when NIM is unavailable."""
+        with patch("forge.core.nim_client.chat_completion", new_callable=AsyncMock, return_value=None):
+            resp = client.post("/v1/chat/completions", json={
+                "messages": [{"role": "system", "content": "sys only"}],
+            })
+        assert resp.status_code == 502
+
+
+class TestOutputGuardrailsModifiesResponse:
+    def test_output_guardrails_replaces_response_text(self, client, mock_guardrails):
+        """When output guardrails returns a different response, it should be used."""
+        mock_guardrails.enabled = True
+        mock_guardrails.check_input = AsyncMock(return_value={
+            "allowed": True, "reason": None, "scrubbed_query": "hello",
+        })
+        mock_guardrails.check_output = AsyncMock(return_value={
+            "allowed": True, "response": "MODIFIED response", "provenance": {},
+        })
+        nim_resp = _nim_response("original response")
+        with patch("forge.core.nim_client.chat_completion", new_callable=AsyncMock, return_value=nim_resp), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=LayeredContext(query="hello")), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=[]):
+            resp = client.post("/v1/chat/completions", json={
+                "messages": [{"role": "user", "content": "hello"}],
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "MODIFIED response"
+
+    def test_context_injected_after_system_message(self, client):
+        """When there are system messages, context is inserted after the last system msg."""
+        ctx = LayeredContext(
+            query="test", layer_0="identity", layer_2="rich context",
+            total_tokens=50, layers_used=[0, 2], experts_referenced=["Alice"],
+        )
+        captured_messages = []
+
+        async def fake_nim(messages, **kwargs):
+            captured_messages.extend(messages)
+            return _nim_response()
+
+        with patch("forge.core.nim_client.chat_completion", side_effect=fake_nim), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=ctx), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=[]):
+            client.post("/v1/chat/completions", json={
+                "messages": [
+                    {"role": "system", "content": "You are helpful."},
+                    {"role": "user", "content": "Who is Alice?"},
+                ],
+            })
+        # Context message should be inserted after system, before user
+        roles = [m["role"] for m in captured_messages]
+        # There should be a second system message (context) inserted after index 0
+        assert roles.count("system") == 2
+        assert roles[0] == "system"
+
+
+class TestStreamingError:
+    def test_streaming_error_yields_error_chunk(self, client):
+        """When streaming raises, the error should be returned as an SSE chunk."""
+        async def erroring_stream(*args, **kwargs):
+            raise RuntimeError("NIM connection failed")
+            yield  # noqa: unreachable -- required to make this function a generator
+
+        with patch("forge.core.nim_client.stream_completion", return_value=erroring_stream()):
+            resp = client.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": True,
+                },
+                headers={"X-NeuralForge-Bypass": "true"},
+            )
+        assert resp.status_code == 200
+        content = resp.text
+        assert "error" in content

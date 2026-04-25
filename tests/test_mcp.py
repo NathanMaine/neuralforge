@@ -350,3 +350,222 @@ class TestMCPTools:
             from forge.mcp.tools import list_experts
             result = json.loads(await list_experts())
         assert "error" in result
+
+
+# --- "Engine not initialized" paths for every tool ---
+
+class TestMCPToolsNotInitialized:
+    """Ensure every tool returns an error dict when the engine is None."""
+
+    @pytest.mark.asyncio
+    async def test_stats_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import stats
+            result = json.loads(await stats())
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_add_node_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import add_node
+            result = json.loads(await add_node(name="X", node_type="concept"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_add_edge_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import add_edge
+            result = json.loads(await add_edge(source_id="a", target_id="b", edge_type="related_to"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_add_edge_invalid_edge_type(self):
+        mock_engine = MagicMock()
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import add_edge
+            result = json.loads(await add_edge(source_id="a", target_id="b", edge_type="not_a_type"))
+        assert "error" in result
+        assert "Invalid edge_type" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_edge_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import update_edge
+            result = json.loads(await update_edge(edge_id="e1"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_update_edge_not_found(self):
+        mock_engine = MagicMock()
+        mock_engine.store.update_edge.return_value = None
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import update_edge
+            result = json.loads(await update_edge(edge_id="missing"))
+        assert result["error"] == "Edge not found"
+
+    @pytest.mark.asyncio
+    async def test_update_edge_with_confidence(self):
+        from forge.graph.models import Edge, EdgeType
+        mock_engine = MagicMock()
+        mock_engine.store.update_edge.return_value = Edge(
+            id="e1", source_id="n1", target_id="n2",
+            edge_type=EdgeType.related_to, confidence=0.9,
+        )
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import update_edge
+            result = json.loads(await update_edge(edge_id="e1", confidence=0.9))
+        assert "edge" in result
+
+    @pytest.mark.asyncio
+    async def test_expire_edge_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import expire_edge
+            result = json.loads(await expire_edge(edge_id="e1"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_expire_edge_not_found(self):
+        mock_engine = MagicMock()
+        mock_engine.store.expire_edge.return_value = None
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import expire_edge
+            result = json.loads(await expire_edge(edge_id="missing"))
+        assert result["error"] == "Edge not found"
+
+    @pytest.mark.asyncio
+    async def test_query_graph_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import query_graph
+            result = json.loads(await query_graph(query="ML"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_traverse_graph_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import traverse_graph
+            result = json.loads(await traverse_graph(node_id="n1"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_find_contradictions_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import find_contradictions
+            result = json.loads(await find_contradictions())
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_find_experts_for_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import find_experts_for
+            result = json.loads(await find_experts_for(topic="ML"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_graph_timeline_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import graph_timeline
+            result = json.loads(await graph_timeline(since="2024-01-01"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_pagerank_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import pagerank
+            result = json.loads(await pagerank())
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_pagerank_with_nodes(self):
+        mock_engine = MagicMock()
+        mock_engine.pagerank.return_value = {"node1": 0.6, "node2": 0.4}
+        from forge.graph.models import Node, NodeType
+        mock_engine.store.get_node.side_effect = lambda nid: Node(
+            id=nid, name=f"Node {nid}", node_type=NodeType.concept
+        )
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import pagerank
+            result = json.loads(await pagerank())
+        assert len(result["pagerank"]) == 2
+        # Sorted descending by score
+        assert result["pagerank"][0]["score"] == 0.6
+
+    @pytest.mark.asyncio
+    async def test_pagerank_unknown_node(self):
+        mock_engine = MagicMock()
+        mock_engine.pagerank.return_value = {"ghost": 0.5}
+        mock_engine.store.get_node.return_value = None
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import pagerank
+            result = json.loads(await pagerank())
+        assert result["pagerank"][0]["name"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_communities_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import communities
+            result = json.loads(await communities())
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_communities_with_nodes(self):
+        mock_engine = MagicMock()
+        mock_engine.find_communities.return_value = {"n1": 0, "n2": 0, "n3": 1}
+        with patch("forge.mcp.tools._get_engine", return_value=mock_engine):
+            from forge.mcp.tools import communities
+            result = json.loads(await communities())
+        assert result["num_communities"] == 2
+        assert len(result["communities"]["0"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_shortest_path_not_initialized(self):
+        with patch("forge.mcp.tools._get_engine", return_value=None):
+            from forge.mcp.tools import shortest_path
+            result = json.loads(await shortest_path(source_id="a", target_id="b"))
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_search_experts_embedding_failure(self):
+        with patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=None):
+            from forge.mcp.tools import search_experts
+            result = json.loads(await search_experts(query="test"))
+        assert "error" in result
+        assert result["results"] == []
+
+
+# --- _get_engine / _get_guardrails direct call coverage ---
+
+class TestMCPToolsGetters:
+    def test_get_engine_returns_graph_engine(self):
+        import forge.api.main as main_mod
+        original = main_mod.graph_engine
+        mock_eng = MagicMock()
+        main_mod.graph_engine = mock_eng
+        try:
+            from forge.mcp.tools import _get_engine
+            result = _get_engine()
+            assert result is mock_eng
+        finally:
+            main_mod.graph_engine = original
+
+    def test_get_guardrails_returns_guardrails_engine(self):
+        import forge.api.main as main_mod
+        original = main_mod.guardrails_engine
+        mock_gr = MagicMock()
+        main_mod.guardrails_engine = mock_gr
+        try:
+            from forge.mcp.tools import _get_guardrails
+            result = _get_guardrails()
+            assert result is mock_gr
+        finally:
+            main_mod.guardrails_engine = original
+
+    def test_get_engine_returns_none_when_not_set(self):
+        import forge.api.main as main_mod
+        original = main_mod.graph_engine
+        main_mod.graph_engine = None
+        try:
+            from forge.mcp.tools import _get_engine
+            assert _get_engine() is None
+        finally:
+            main_mod.graph_engine = original
+

@@ -178,3 +178,47 @@ class TestKeywordExtraction:
         keywords = _extract_keywords("is it ok to do ML")
         # All short words filtered
         assert all(len(k) >= 4 for k in keywords) or keywords == []
+
+
+class TestSearchEmbeddingFailure:
+    def test_search_with_embedding_failure_returns_empty_results(self, client):
+        """When embedding returns None, search results should be empty."""
+        with patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=_mock_context()), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=None), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=[]):
+            resp = client.get("/api/search?q=machine+learning")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["results"] == []
+
+    def test_search_bm25_skipped_when_embedding_fails(self, client):
+        """BM25 scoring is skipped gracefully when embedding returns None."""
+        with patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=_mock_context()), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=None):
+            resp = client.get("/api/search?q=deep+learning+neural+networks")
+        assert resp.status_code == 200
+
+
+class TestSearchBM25ImportFailure:
+    def test_search_without_bm25_package(self, client):
+        """Search should work even if rank_bm25 is not installed."""
+        results = [
+            {"score": 0.9, "expert": "Alice", "title": "ML", "text": "machine learning", "source": "x", "chunk_index": 0},
+        ]
+        # Use builtins.__import__ to force ImportError for rank_bm25 specifically,
+        # regardless of whether the package is actually installed.
+        import builtins
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "rank_bm25":
+                raise ImportError("No module named 'rank_bm25'")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import), \
+             patch("forge.layers.engine.get_context", new_callable=AsyncMock, return_value=_mock_context()), \
+             patch("forge.core.embeddings.get_embedding", new_callable=AsyncMock, return_value=[0.1]*768), \
+             patch("forge.core.qdrant_client.search_vectors", return_value=results):
+            resp = client.get("/api/search?q=machine+learning")
+        assert resp.status_code == 200
+

@@ -84,6 +84,104 @@ class TestGuardrailsEngineDisabled:
 
 
 # ===================================================================
+# GuardrailsEngine -- init with mocked nemoguardrails package
+# ===================================================================
+
+class TestGuardrailsEngineInit:
+    """Tests for GuardrailsEngine.__init__ with NeMo Guardrails mocked."""
+
+    def test_init_enabled_creates_rails(self):
+        """Engine should create _rails when HAS_GUARDRAILS and GUARDRAILS_ENABLED."""
+        import sys
+
+        mock_rails_config = MagicMock()
+        mock_rails_instance = MagicMock()
+        mock_rc_class = MagicMock()
+        mock_rc_class.from_path.return_value = mock_rails_config
+        mock_lr_class = MagicMock(return_value=mock_rails_instance)
+
+        # Provide fake nemoguardrails module so the conditional import succeeds
+        fake_nemo = MagicMock()
+        fake_nemo.RailsConfig = mock_rc_class
+        fake_nemo.LLMRails = mock_lr_class
+
+        with patch.dict(sys.modules, {"nemoguardrails": fake_nemo}), \
+             patch("forge.guardrails.rails.HAS_GUARDRAILS", True), \
+             patch("forge.guardrails.rails.config") as mock_cfg:
+            mock_cfg.GUARDRAILS_ENABLED = True
+            mock_cfg.GUARDRAILS_CONFIG_DIR = "forge/guardrails/config"
+
+            # Inject RailsConfig / LLMRails into the module namespace so __init__ finds them
+            import forge.guardrails.rails as rails_mod
+            rails_mod.RailsConfig = mock_rc_class
+            rails_mod.LLMRails = mock_lr_class
+            try:
+                engine = GuardrailsEngine()
+            finally:
+                # Clean up injected names
+                for attr in ("RailsConfig", "LLMRails"):
+                    rails_mod.__dict__.pop(attr, None)
+
+        assert engine.enabled is True
+        assert engine._rails is mock_rails_instance
+        mock_rc_class.from_path.assert_called_once_with("forge/guardrails/config")
+        mock_lr_class.assert_called_once_with(mock_rails_config)
+
+    def test_init_disabled_when_guardrails_config_flag_false(self):
+        """Engine should stay disabled when GUARDRAILS_ENABLED is False."""
+        with patch("forge.guardrails.rails.HAS_GUARDRAILS", True), \
+             patch("forge.guardrails.rails.config") as mock_cfg:
+            mock_cfg.GUARDRAILS_ENABLED = False
+            mock_cfg.GUARDRAILS_CONFIG_DIR = "forge/guardrails/config"
+
+            engine = GuardrailsEngine()
+
+        assert engine.enabled is False
+        assert engine._rails is None
+
+    def test_init_failure_disables_engine(self):
+        """When RailsConfig.from_path raises, engine should be disabled."""
+        mock_rc_class = MagicMock()
+        mock_rc_class.from_path.side_effect = Exception("config not found")
+
+        import forge.guardrails.rails as rails_mod
+        rails_mod.RailsConfig = mock_rc_class
+        try:
+            with patch("forge.guardrails.rails.HAS_GUARDRAILS", True), \
+                 patch("forge.guardrails.rails.config") as mock_cfg:
+                mock_cfg.GUARDRAILS_ENABLED = True
+                mock_cfg.GUARDRAILS_CONFIG_DIR = "fake/path"
+                engine = GuardrailsEngine()
+        finally:
+            rails_mod.__dict__.pop("RailsConfig", None)
+
+        assert engine.enabled is False
+        assert engine._rails is None
+
+    def test_init_uses_custom_config_dir(self):
+        """Engine should use the provided config_dir argument."""
+        mock_rc_class = MagicMock()
+        mock_rc_class.from_path.return_value = MagicMock()
+        mock_lr_class = MagicMock()
+
+        import forge.guardrails.rails as rails_mod
+        rails_mod.RailsConfig = mock_rc_class
+        rails_mod.LLMRails = mock_lr_class
+        try:
+            with patch("forge.guardrails.rails.HAS_GUARDRAILS", True), \
+                 patch("forge.guardrails.rails.config") as mock_cfg:
+                mock_cfg.GUARDRAILS_ENABLED = True
+                mock_cfg.GUARDRAILS_CONFIG_DIR = "default/path"
+                engine = GuardrailsEngine(config_dir="custom/config/path")
+        finally:
+            for attr in ("RailsConfig", "LLMRails"):
+                rails_mod.__dict__.pop(attr, None)
+
+        assert engine._config_dir == "custom/config/path"
+        mock_rc_class.from_path.assert_called_once_with("custom/config/path")
+
+
+# ===================================================================
 # GuardrailsEngine -- enabled mode (mocked nemoguardrails)
 # ===================================================================
 
